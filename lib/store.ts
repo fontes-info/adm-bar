@@ -11,8 +11,11 @@ import type {
   TipoMovimento,
 } from "./types";
 import { brl, qtd } from "./format";
+import { limparSenha, salvarRegistroSenha, type RegistroSenha } from "./senha";
 
 const CHAVE = "adm-bar:dados";
+
+export const CATEGORIAS_PADRAO = ["Bebidas alcoólicas", "Bebidas", "Refrigerantes", "Comida"];
 
 /* ---------------------------------------------------------------- utils */
 
@@ -187,6 +190,19 @@ function validarMovimento(bruto: unknown, n: number): Movimento {
   return r;
 }
 
+const nomeCategoria = (c: string) => c.trim().replace(/\s+/g, " ");
+const chaveCategoria = (c: string) => nomeCategoria(c).toLocaleLowerCase("pt-BR");
+
+/** Mapa chave → nome oficial, sem repetir variações de maiúsculas e espaços. */
+function indexarCategorias(nomes: string[]) {
+  const indice = new Map<string, string>();
+  for (const bruto of nomes) {
+    const nome = nomeCategoria(bruto);
+    if (nome && !indice.has(chaveCategoria(nome))) indice.set(chaveCategoria(nome), nome);
+  }
+  return indice;
+}
+
 export function validarDados(bruto: unknown): Dados {
   if (!bruto || typeof bruto !== "object") throw new Error("Arquivo inválido.");
   const o = bruto as Record<string, unknown>;
@@ -212,6 +228,13 @@ export function validarDados(bruto: unknown): Dados {
       atualizadoEm: str(p.atualizadoEm, agora()),
     }));
 
+  // dados antigos não têm a lista: parte das padrão e aproveita as já usadas nos produtos
+  const categoriasSalvas = Array.isArray(o.categorias)
+    ? o.categorias.filter((c): c is string => typeof c === "string")
+    : CATEGORIAS_PADRAO;
+  const indiceCategorias = indexarCategorias([...categoriasSalvas, ...produtos.map((p) => p.categoria)]);
+  for (const p of produtos) p.categoria = indiceCategorias.get(chaveCategoria(p.categoria)) ?? "";
+
   const movimentos = o.movimentos.map((m, i) => validarMovimento(m, i + 1));
 
   const caixa = o.caixa as { sessao?: SessaoCaixa | null } | undefined;
@@ -232,6 +255,7 @@ export function validarDados(bruto: unknown): Dados {
       responsavel: str(loja.responsavel),
       criadoEm: str(loja.criadoEm, agora()),
     },
+    categorias: [...indiceCategorias.values()],
     produtos,
     movimentos,
     caixa: { sessao },
@@ -300,15 +324,18 @@ export function movimentosDoProduto(dados: Dados, produtoId: string) {
 
 /* ---------------------------------------------------------- ações */
 
-export function cadastrar(responsavel: string, nomeLoja: string) {
+export function cadastrar(responsavel: string, nomeLoja: string, senha?: RegistroSenha) {
   const r = responsavel.trim();
   const n = nomeLoja.trim();
   if (!r) throw new Error("Informe seu nome.");
   if (!n) throw new Error("Informe o nome da loja.");
+  if (senha) salvarRegistroSenha(senha);
+  else limparSenha();
   gravar({
     app: "adm-bar",
     versao: 1,
     loja: { nome: n, responsavel: r, criadoEm: agora() },
+    categorias: [...CATEGORIAS_PADRAO],
     produtos: [],
     movimentos: [mov("cadastro", { descricao: `Loja "${n}" cadastrada por ${r}` })],
     caixa: { sessao: null },
@@ -334,6 +361,41 @@ export function exportar(): Dados {
 
 export function apagarTudo() {
   gravar(null);
+  limparSenha();
+}
+
+export function adicionarCategoria(nome: string) {
+  const n = nomeCategoria(nome);
+  if (!n) throw new Error("Informe o nome da categoria.");
+  atualizar((d) => {
+    const existente = d.categorias.find((c) => chaveCategoria(c) === chaveCategoria(n));
+    if (existente) throw new Error(`A categoria "${existente}" já existe.`);
+    return {
+      ...d,
+      categorias: [...d.categorias, n],
+      movimentos: [...d.movimentos, mov("loja_editada", { alteracoes: [`Categoria adicionada: ${n}`] })],
+    };
+  });
+}
+
+export function removerCategoria(nome: string) {
+  atualizar((d) => {
+    if (!d.categorias.includes(nome)) throw new Error("Categoria não encontrada.");
+    const total = d.produtos.filter((p) => p.categoria === nome).length;
+    if (total) throw new Error(`A categoria "${nome}" tem ${total} produto(s) e não pode ser excluída.`);
+    return {
+      ...d,
+      categorias: d.categorias.filter((c) => c !== nome),
+      movimentos: [...d.movimentos, mov("loja_editada", { alteracoes: [`Categoria excluída: ${nome}`] })],
+    };
+  });
+}
+
+export function registrarAlteracaoSenha(acao: "adicionada" | "alterada" | "removida") {
+  atualizar((d) => ({
+    ...d,
+    movimentos: [...d.movimentos, mov("loja_editada", { alteracoes: [`Senha de acesso ${acao}`] })],
+  }));
 }
 
 export function atualizarLoja(nome: string, responsavel: string, descricao?: string) {

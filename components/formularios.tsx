@@ -13,7 +13,7 @@ import {
   resumoSessao,
   salvarProduto,
 } from "@/lib/store";
-import { Botao, CampoDescricao, Campo, Chips, Folha, avisar, cx, tentar } from "./ui";
+import { Botao, CampoDescricao, CampoSelecao, Campo, Chips, Folha, avisar, cx, tentar } from "./ui";
 import { Icone } from "./icone";
 
 function semChave<T>(obj: Record<string, T>, chave: string) {
@@ -99,14 +99,15 @@ function CorpoProduto({
   return (
     <form onSubmit={salvar} className="space-y-4 pt-2">
       <Campo rotulo="Nome do produto" value={f.nome} onChange={set("nome")} placeholder="Ex.: Cerveja Lata 350ml" required autoFocus={!produto} />
-      <div className="grid grid-cols-2 gap-3">
-        <Campo rotulo="Categoria" value={f.categoria} onChange={set("categoria")} placeholder="Bebidas" list="categorias" opcional />
+      <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3">
+        <CampoSelecao
+          rotulo="Categoria"
+          value={f.categoria}
+          onChange={(e) => setF({ ...f, categoria: e.target.value })}
+          opcoes={[{ valor: "", rotulo: "Sem categoria" }, ...categorias.map((c) => ({ valor: c, rotulo: c }))]}
+          opcional
+        />
         <Campo rotulo="Unidade" value={f.unidade} onChange={set("unidade")} placeholder="un, kg, L, cx" />
-        <datalist id="categorias">
-          {categorias.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Campo rotulo="Preço de venda" inputMode="decimal" value={f.precoVenda} onChange={set("precoVenda")} placeholder="0,00" />

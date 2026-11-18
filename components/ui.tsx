@@ -91,6 +91,41 @@ export function Campo({
   );
 }
 
+export function CampoSelecao({
+  rotulo,
+  opcional,
+  opcoes,
+  className,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  rotulo: string;
+  opcional?: boolean;
+  opcoes: { valor: string; rotulo: string }[];
+}) {
+  const id = useId();
+  return (
+    <div className={className}>
+      <label htmlFor={id} className="mb-1.5 flex items-baseline justify-between text-sm font-medium text-zinc-300">
+        {rotulo}
+        {opcional && <span className="text-xs font-normal text-zinc-500">opcional</span>}
+      </label>
+      <div className="relative">
+        <select id={id} className={cx(estiloCampo, "appearance-none truncate pr-9")} {...props}>
+          {opcoes.map((o) => (
+            <option key={o.valor} value={o.valor} className="bg-zinc-900">
+              {o.rotulo}
+            </option>
+          ))}
+        </select>
+        <Icone
+          nome="direita"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 rotate-90 text-zinc-500"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function CampoDescricao({
   valor,
   onChange,
