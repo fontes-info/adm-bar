@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Dados, FormaPagamento, Produto } from "@/lib/types";
-import { brl, parseQtd, parseValor, qtd, qtdParaInput, valorParaInput } from "@/lib/format";
+import { brl, lerQtd, lerValor, parseQtd, parseValor, qtd, qtdParaInput, valorParaInput } from "@/lib/format";
 import { FORMAS } from "@/lib/movimentos";
 import {
   abrirCaixa,
@@ -15,6 +15,12 @@ import {
 } from "@/lib/store";
 import { Botao, CampoDescricao, Campo, Chips, Folha, avisar, cx, tentar } from "./ui";
 import { Icone } from "./icone";
+
+function semChave<T>(obj: Record<string, T>, chave: string) {
+  const copia = { ...obj };
+  delete copia[chave];
+  return copia;
+}
 
 const OPCOES_FORMA = (Object.keys(FORMAS) as FormaPagamento[]).map((f) => ({ valor: f, rotulo: FORMAS[f] }));
 
@@ -70,10 +76,10 @@ function CorpoProduto({
     e.preventDefault();
     let id = "";
     const ok = tentar(() => {
-      const precoVenda = parseValor(f.precoVenda) ?? 0;
-      const custo = parseValor(f.custo) ?? 0;
-      const estoqueMinimo = parseQtd(f.estoqueMinimo) ?? 0;
-      const quantidade = parseQtd(f.quantidade) ?? 0;
+      const precoVenda = lerValor(f.precoVenda, "preço de venda");
+      const custo = lerValor(f.custo, "custo");
+      const estoqueMinimo = lerQtd(f.estoqueMinimo, "estoque mínimo");
+      const quantidade = lerQtd(f.quantidade, "estoque inicial");
       id = salvarProduto(
         { nome: f.nome, categoria: f.categoria, unidade: f.unidade, codigo: f.codigo, precoVenda, custo, estoqueMinimo, quantidade },
         produto?.id,
@@ -192,7 +198,14 @@ function CorpoEstoque({
     e.preventDefault();
     if (!p) return avisar("Escolha um produto.", "erro");
     const ok = tentar(
-      () => movimentarEstoque(p.id, tipo, n ?? NaN, descricao, custo.trim() ? parseValor(custo) ?? undefined : undefined),
+      () =>
+        movimentarEstoque(
+          p.id,
+          tipo,
+          lerQtd(quantidade, "quantidade", null),
+          descricao,
+          custo.trim() ? lerValor(custo, "custo unitário") : undefined
+        ),
       "Movimentação registrada"
     );
     if (ok) aoFechar();
@@ -294,6 +307,7 @@ export function FormVenda({ aberta, aoFechar, dados }: { aberta: boolean; aoFech
 function CorpoVenda({ dados, aoFechar }: { dados: Dados; aoFechar: () => void }) {
   const [busca, setBusca] = useState("");
   const [carrinho, setCarrinho] = useState<Record<string, number>>({});
+  const [editando, setEditando] = useState<Record<string, string>>({});
   const [forma, setForma] = useState<FormaPagamento>("dinheiro");
   const [recebido, setRecebido] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -316,9 +330,18 @@ function CorpoVenda({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
 
   const alterar = (p: Produto, delta: number) => {
     const atual = carrinho[p.id] ?? 0;
-    const novo = Math.max(0, Math.min(p.quantidade, atual + delta));
+    const novo = Math.max(0, Math.min(p.quantidade, Math.round((atual + delta) * 1000) / 1000));
     if (atual + delta > p.quantidade) avisar(`Só há ${qtd(p.quantidade)} ${p.unidade} de ${p.nome}.`, "erro");
     setCarrinho({ ...carrinho, [p.id]: novo });
+    setEditando((atual) => semChave(atual, p.id));
+  };
+
+  const digitar = (p: Produto, texto: string) => {
+    setEditando({ ...editando, [p.id]: texto });
+    const n = parseQtd(texto);
+    if (n === null || n < 0) return;
+    if (n > p.quantidade) avisar(`Só há ${qtd(p.quantidade)} ${p.unidade} de ${p.nome}.`, "erro");
+    setCarrinho({ ...carrinho, [p.id]: Math.min(n, p.quantidade) });
   };
 
   const finalizar = () => {
@@ -366,6 +389,7 @@ function CorpoVenda({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
                 {troco < 0 ? `Faltam ${brl(-troco)}` : `Troco: ${brl(troco)}`}
               </p>
             )}
+            {recebido.trim() && valorRecebido === null && <p className="mt-1.5 text-sm text-rose-400">Valor inválido</p>}
           </div>
         )}
         <CampoDescricao valor={descricao} onChange={setDescricao} placeholder="Ex.: mesa 4, cliente João" />
@@ -373,7 +397,7 @@ function CorpoVenda({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
           <Botao variante="secundario" onClick={() => setEtapa("itens")} icone="voltar">
             Itens
           </Botao>
-          <Botao variante="sucesso" onClick={finalizar} icone="check" disabled={troco !== null && troco < 0}>
+          <Botao variante="sucesso" onClick={finalizar} icone="check" disabled={forma === "dinheiro" && troco !== null && troco < 0}>
             Finalizar {brl(total)}
           </Botao>
         </div>
@@ -410,12 +434,20 @@ function CorpoVenda({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
                   {brl(p.precoVenda)} · {esgotado ? "sem estoque" : `${qtd(p.quantidade)} ${p.unidade}`}
                 </p>
               </button>
-              {q > 0 ? (
+              {q > 0 || editando[p.id] !== undefined ? (
                 <div className="flex items-center gap-1">
                   <button type="button" aria-label="Diminuir" onClick={() => alterar(p, -1)} className="flex size-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-100 active:bg-zinc-700">
                     <Icone nome="menos" className="size-4" />
                   </button>
-                  <span className="w-8 text-center font-semibold tabular-nums text-zinc-50">{qtd(q)}</span>
+                  <input
+                    aria-label={`Quantidade de ${p.nome}`}
+                    inputMode="decimal"
+                    value={editando[p.id] ?? qtdParaInput(q)}
+                    onChange={(e) => digitar(p, e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={() => setEditando((atual) => semChave(atual, p.id))}
+                    className="w-14 rounded-lg bg-zinc-950/60 py-2 text-center font-semibold tabular-nums text-zinc-50 outline-none ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-amber-400/70"
+                  />
                   <button type="button" aria-label="Aumentar" onClick={() => alterar(p, 1)} className="flex size-10 items-center justify-center rounded-lg bg-amber-400 text-zinc-950 active:bg-amber-500">
                     <Icone nome="mais" className="size-4" />
                   </button>
@@ -469,7 +501,7 @@ function CorpoLancamento({ tipo, aoFechar, dinheiroDisponivel }: { tipo: TipoLan
   const [descricao, setDescricao] = useState("");
   const salvar = (e: React.FormEvent) => {
     e.preventDefault();
-    if (tentar(() => lancarCaixa(tipo, parseValor(valor) ?? 0, descricao, forma), "Lançamento registrado")) aoFechar();
+    if (tentar(() => lancarCaixa(tipo, lerValor(valor, "valor", null), descricao, forma), "Lançamento registrado")) aoFechar();
   };
   return (
     <form onSubmit={salvar} className="space-y-4 pt-2">
@@ -498,7 +530,7 @@ export function FormAbrirCaixa({ aberta, aoFechar }: { aberta: boolean; aoFechar
   const [descricao, setDescricao] = useState("");
   const salvar = (e: React.FormEvent) => {
     e.preventDefault();
-    if (tentar(() => abrirCaixa(parseValor(valor) ?? 0, descricao), "Caixa aberto")) {
+    if (tentar(() => abrirCaixa(lerValor(valor, "dinheiro inicial"), descricao), "Caixa aberto")) {
       setValor("");
       setDescricao("");
       aoFechar();
@@ -541,7 +573,8 @@ function CorpoFechar({ dados, aoFechar }: { dados: Dados; aoFechar: () => void }
   const dif = valorContado !== null ? valorContado - r.dinheiro : null;
   const salvar = (e: React.FormEvent) => {
     e.preventDefault();
-    if (valorContado === null) return avisar("Informe o valor contado na gaveta.", "erro");
+    if (valorContado === null)
+      return avisar(contado.trim() ? `Valor inválido: "${contado.trim()}".` : "Informe o valor contado na gaveta.", "erro");
     if (tentar(() => fecharCaixa(valorContado, descricao), "Caixa fechado")) aoFechar();
   };
   const linhas: [string, number][] = [

@@ -111,6 +111,82 @@ const num = (v: unknown, padrao = 0) => {
 };
 const str = (v: unknown, padrao = "") => (typeof v === "string" ? v : padrao);
 
+const TIPOS_VALIDOS: TipoMovimento[] = [
+  "cadastro", "produto_criado", "produto_editado", "produto_excluido", "entrada", "saida", "ajuste",
+  "venda", "estorno", "abertura", "fechamento", "suprimento", "sangria", "despesa", "loja_editada", "dados_importados",
+];
+const FORMAS_VALIDAS: FormaPagamento[] = ["dinheiro", "pix", "debito", "credito", "outro"];
+
+function validarMovimento(bruto: unknown, n: number): Movimento {
+  const erro = (motivo: string) => new Error(`Movimentação nº ${n} inválida: ${motivo}.`);
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) throw erro("formato");
+  const m = bruto as Record<string, unknown>;
+  if (!TIPOS_VALIDOS.includes(m.tipo as TipoMovimento)) throw erro("tipo desconhecido");
+  if (typeof m.criadoEm !== "string" || Number.isNaN(Date.parse(m.criadoEm))) throw erro("data");
+
+  const opcStr = (k: string) => {
+    if (m[k] === undefined || m[k] === null) return undefined;
+    if (typeof m[k] !== "string") throw erro(k);
+    return m[k] as string;
+  };
+  const opcNum = (k: string) => {
+    if (m[k] === undefined || m[k] === null) return undefined;
+    if (typeof m[k] !== "number" || !Number.isFinite(m[k])) throw erro(k);
+    return m[k] as number;
+  };
+
+  let itens: ItemMovimento[] | undefined;
+  if (m.itens !== undefined && m.itens !== null) {
+    if (!Array.isArray(m.itens)) throw erro("itens");
+    itens = m.itens.map((it) => {
+      const i = it as Record<string, unknown> | null;
+      if (!i || typeof i !== "object" || typeof i.produtoId !== "string" || typeof i.nome !== "string") throw erro("itens");
+      for (const k of ["quantidade", "precoUnit", "estoqueAntes", "estoqueDepois"])
+        if (typeof i[k] !== "number" || !Number.isFinite(i[k])) throw erro(`itens.${k}`);
+      return {
+        produtoId: i.produtoId,
+        nome: i.nome,
+        quantidade: i.quantidade as number,
+        precoUnit: i.precoUnit as number,
+        estoqueAntes: i.estoqueAntes as number,
+        estoqueDepois: i.estoqueDepois as number,
+      };
+    });
+  }
+  if ((m.tipo === "venda" || m.tipo === "estorno") && !itens) throw erro("venda sem itens");
+
+  let alteracoes: string[] | undefined;
+  if (m.alteracoes !== undefined && m.alteracoes !== null) {
+    if (!Array.isArray(m.alteracoes) || m.alteracoes.some((a) => typeof a !== "string")) throw erro("alterações");
+    alteracoes = m.alteracoes as string[];
+  }
+  const forma = opcStr("formaPagamento");
+  if (forma !== undefined && !FORMAS_VALIDAS.includes(forma as FormaPagamento)) throw erro("forma de pagamento");
+
+  const r: Movimento = {
+    id: opcStr("id") || gerarId(),
+    tipo: m.tipo as TipoMovimento,
+    criadoEm: m.criadoEm,
+    descricao: opcStr("descricao"),
+    descricaoEditadaEm: opcStr("descricaoEditadaEm"),
+    produtoId: opcStr("produtoId"),
+    produtoNome: opcStr("produtoNome"),
+    quantidade: opcNum("quantidade"),
+    estoqueAntes: opcNum("estoqueAntes"),
+    estoqueDepois: opcNum("estoqueDepois"),
+    itens,
+    valor: opcNum("valor"),
+    formaPagamento: forma as FormaPagamento | undefined,
+    sessaoId: opcStr("sessaoId"),
+    refId: opcStr("refId"),
+    esperado: opcNum("esperado"),
+    contado: opcNum("contado"),
+    alteracoes,
+  };
+  for (const k of Object.keys(r) as (keyof Movimento)[]) if (r[k] === undefined) delete r[k];
+  return r;
+}
+
 export function validarDados(bruto: unknown): Dados {
   if (!bruto || typeof bruto !== "object") throw new Error("Arquivo inválido.");
   const o = bruto as Record<string, unknown>;
@@ -136,15 +212,7 @@ export function validarDados(bruto: unknown): Dados {
       atualizadoEm: str(p.atualizadoEm, agora()),
     }));
 
-  const movimentos = o.movimentos
-    .filter(
-      (m): m is Movimento =>
-        !!m &&
-        typeof m === "object" &&
-        typeof (m as Movimento).tipo === "string" &&
-        typeof (m as Movimento).criadoEm === "string"
-    )
-    .map((m) => ({ ...m, id: m.id || gerarId() }));
+  const movimentos = o.movimentos.map((m, i) => validarMovimento(m, i + 1));
 
   const caixa = o.caixa as { sessao?: SessaoCaixa | null } | undefined;
   const sessao =
@@ -299,6 +367,8 @@ export interface ProdutoInput {
 export function salvarProduto(input: ProdutoInput, id?: string, descricao?: string): string {
   const nome = input.nome.trim();
   if (!nome) throw new Error("Informe o nome do produto.");
+  const finitos = [input.precoVenda, input.custo, input.quantidade, input.estoqueMinimo].every(Number.isFinite);
+  if (!finitos) throw new Error("Há valores inválidos no formulário.");
   if (input.precoVenda < 0 || input.custo < 0) throw new Error("Valores não podem ser negativos.");
   if (input.quantidade < 0 || input.estoqueMinimo < 0) throw new Error("Quantidades não podem ser negativas.");
   const base = {
@@ -386,6 +456,8 @@ export function movimentarEstoque(
 ) {
   if (!Number.isFinite(quantidade) || quantidade < 0 || (tipo !== "ajuste" && quantidade === 0))
     throw new Error("Informe uma quantidade válida.");
+  if (custoUnit !== undefined && (!Number.isFinite(custoUnit) || custoUnit < 0))
+    throw new Error("O custo unitário não pode ser negativo.");
   atualizar((d) => {
     const p = d.produtos.find((x) => x.id === produtoId);
     if (!p) throw new Error("Produto não encontrado.");
@@ -399,7 +471,7 @@ export function movimentarEstoque(
     if (tipo === "ajuste") depois = quantidade;
     depois = Math.round(depois * 1000) / 1000;
     if (tipo === "ajuste" && depois === antes) throw new Error("A quantidade informada é igual à atual.");
-    const novoCusto = tipo === "entrada" && custoUnit !== undefined && custoUnit >= 0 ? custoUnit : p.custo;
+    const novoCusto = tipo === "entrada" && custoUnit !== undefined ? custoUnit : p.custo;
     return {
       ...d,
       produtos: d.produtos.map((x) =>
@@ -428,7 +500,7 @@ function exigirSessao(d: Dados) {
 }
 
 export function abrirCaixa(saldoInicial: number, descricao?: string) {
-  if (saldoInicial < 0) throw new Error("Saldo inicial inválido.");
+  if (!Number.isFinite(saldoInicial) || saldoInicial < 0) throw new Error("Saldo inicial inválido.");
   atualizar((d) => {
     if (d.caixa.sessao) throw new Error("O caixa já está aberto.");
     const sessao: SessaoCaixa = { id: gerarId(), abertoEm: agora(), saldoInicial };
@@ -444,7 +516,7 @@ export function abrirCaixa(saldoInicial: number, descricao?: string) {
 }
 
 export function fecharCaixa(contado: number, descricao?: string) {
-  if (contado < 0) throw new Error("Valor contado inválido.");
+  if (!Number.isFinite(contado) || contado < 0) throw new Error("Valor contado inválido.");
   atualizar((d) => {
     const sessao = exigirSessao(d);
     const r = resumoSessao(d);
@@ -483,7 +555,7 @@ export function lancarCaixa(
   descricao?: string,
   forma: FormaPagamento = "dinheiro"
 ) {
-  if (!(valor > 0)) throw new Error("Informe um valor maior que zero.");
+  if (!Number.isFinite(valor) || !(valor > 0)) throw new Error("Informe um valor maior que zero.");
   atualizar((d) => {
     const sessao = exigirSessao(d);
     if (tipo === "sangria" && valor > resumoSessao(d).dinheiro)

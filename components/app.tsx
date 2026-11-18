@@ -31,6 +31,13 @@ export function App() {
     window.scrollTo(0, 0);
   }, [hash]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      /* sem service worker o app continua funcionando, só não abre offline */
+    });
+  }, []);
+
   if (dados === undefined)
     return (
       <div className="flex min-h-dvh items-center justify-center">

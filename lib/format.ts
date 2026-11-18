@@ -83,3 +83,24 @@ export function slug(texto: string) {
       .replace(/^-|-$/g, "") || "loja"
   );
 }
+
+/** Campo vazio → `vazio`; texto preenchido mas inválido → erro. */
+export function lerValor(texto: string, rotulo: string, vazio: number | null = 0): number {
+  if (!texto.trim()) {
+    if (vazio === null) throw new Error(`Informe ${rotulo}.`);
+    return vazio;
+  }
+  const v = parseValor(texto);
+  if (v === null) throw new Error(`Valor inválido em ${rotulo}: "${texto.trim()}".`);
+  return v;
+}
+
+export function lerQtd(texto: string, rotulo: string, vazio: number | null = 0): number {
+  if (!texto.trim()) {
+    if (vazio === null) throw new Error(`Informe ${rotulo}.`);
+    return vazio;
+  }
+  const v = parseQtd(texto);
+  if (v === null) throw new Error(`Quantidade inválida em ${rotulo}: "${texto.trim()}".`);
+  return v;
+}

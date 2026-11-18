@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { Icone } from "./icone";
 import { voltar } from "@/lib/router";
 
@@ -244,11 +245,32 @@ export function Folha({
     };
   }, [aberta, aoFechar]);
 
+  const raiz = useRef<HTMLDivElement>(null);
+  const painel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberta) return;
+    const focoAnterior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // torna o resto da página inerte: Tab e leitores de tela ficam presos na folha
+    const fundo = [...document.body.children].filter((el) => el !== raiz.current && !el.hasAttribute("inert"));
+    fundo.forEach((el) => el.setAttribute("inert", ""));
+    if (!painel.current?.contains(document.activeElement)) {
+      (painel.current?.querySelector<HTMLElement>("[autofocus]") ?? painel.current)?.focus();
+    }
+    return () => {
+      fundo.forEach((el) => el.removeAttribute("inert"));
+      if (focoAnterior?.isConnected) focoAnterior.focus();
+    };
+  }, [aberta]);
+
   if (!aberta) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={titulo}>
+  return createPortal(
+    <div ref={raiz} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={titulo}>
       <div className="animar-fade absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={aoFechar} />
-      <div className="animar-subir relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-zinc-925 ring-1 ring-white/10 sm:rounded-3xl">
+      <div
+        ref={painel}
+        tabIndex={-1}
+        className="animar-subir relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl bg-zinc-925 outline-none ring-1 ring-white/10 sm:rounded-3xl"
+      >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-zinc-700 sm:hidden" />
         <div className="flex items-center justify-between px-4 pb-1 pt-2">
           <h2 className="text-lg font-semibold text-zinc-50">{titulo}</h2>
@@ -259,7 +281,8 @@ export function Folha({
           <div className="border-t border-white/5 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">{rodape}</div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
