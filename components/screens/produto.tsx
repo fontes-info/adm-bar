@@ -34,7 +34,6 @@ export function DetalheProduto({ dados, id }: { dados: Dados; id: string }) {
   const vendido = historico
     .filter((m) => m.tipo === "venda" && !m.refId)
     .reduce((s, m) => s + (m.itens?.find((i) => i.produtoId === id)?.quantidade ?? 0), 0);
-  const categorias = [...new Set(dados.produtos.map((x) => x.categoria).filter(Boolean))];
 
   const confirmarExclusao = () => {
     if (tentar(() => excluirProduto(p.id, motivo), "Produto excluído")) {
@@ -124,7 +123,7 @@ export function DetalheProduto({ dados, id }: { dados: Dados; id: string }) {
         )}
       </Secao>
 
-      <FormProduto aberta={editar} aoFechar={() => setEditar(false)} produto={p} categorias={categorias} />
+      <FormProduto aberta={editar} aoFechar={() => setEditar(false)} produto={p} categorias={dados.categorias} />
       <FormEstoque tipo={tipo} produto={p} aoFechar={() => setTipo(null)} />
       <Folha aberta={excluir} aoFechar={() => setExcluir(false)} titulo="Excluir produto">
         <div className="space-y-4 pt-2">

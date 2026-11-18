@@ -30,7 +30,6 @@ export function Inicio({ dados }: { dados: Dados }) {
   const baixos = dados.produtos
     .filter((p) => p.quantidade <= p.estoqueMinimo)
     .sort((a, b) => a.quantidade - b.quantidade);
-  const categorias = [...new Set(dados.produtos.map((p) => p.categoria).filter(Boolean))];
 
   const acoes = [
     { id: "venda" as const, rotulo: "Nova venda", icone: "carrinho", destaque: true },
@@ -163,7 +162,7 @@ export function Inicio({ dados }: { dados: Dados }) {
       <FormVenda aberta={folha === "venda"} aoFechar={fechar} dados={dados} />
       <FormAbrirCaixa aberta={folha === "abrir"} aoFechar={fechar} />
       <FormEstoque tipo={folha === "entrada" ? "entrada" : null} produtos={dados.produtos} aoFechar={fechar} />
-      <FormProduto aberta={folha === "produto"} aoFechar={fechar} categorias={categorias} />
+      <FormProduto aberta={folha === "produto"} aoFechar={fechar} categorias={dados.categorias} />
     </div>
   );
 }

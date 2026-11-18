@@ -2,10 +2,12 @@
 
 import { useEffect } from "react";
 import { useDados } from "@/lib/store";
+import { useBloqueado, useBloqueioAoReabrir } from "@/lib/senha";
 import { ir, parseRota, useHash } from "@/lib/router";
 import { Confirmacoes, Toasts, cx } from "./ui";
 import { Icone } from "./icone";
 import { BoasVindas } from "./screens/boas-vindas";
+import { Bloqueio } from "./screens/bloqueio";
 import { Inicio } from "./screens/inicio";
 import { Estoque } from "./screens/estoque";
 import { DetalheProduto } from "./screens/produto";
@@ -24,8 +26,11 @@ const ABAS = [
 
 export function App() {
   const dados = useDados();
+  const bloqueado = useBloqueado();
   const hash = useHash();
   const rota = parseRota(hash);
+
+  useBloqueioAoReabrir();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -53,6 +58,8 @@ export function App() {
         <Confirmacoes />
       </>
     );
+
+  if (bloqueado) return <Bloqueio nomeLoja={dados.loja.nome} />;
 
   let tela: React.ReactNode;
   switch (rota.tela) {

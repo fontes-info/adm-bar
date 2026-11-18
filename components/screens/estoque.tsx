@@ -134,7 +134,7 @@ export function Estoque({ dados }: { dados: Dados }) {
       <FormProduto
         aberta={novo}
         aoFechar={() => setNovo(false)}
-        categorias={categorias}
+        categorias={dados.categorias}
         aoSalvar={(id) => ir(`/produto/${encodeURIComponent(id)}`)}
       />
     </div>

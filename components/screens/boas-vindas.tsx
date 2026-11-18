@@ -2,17 +2,29 @@
 
 import { useState } from "react";
 import { cadastrar } from "@/lib/store";
-import { Botao, Campo, tentar } from "../ui";
+import { SENHA_MINIMA, prepararSenha, senhaDisponivel } from "@/lib/senha";
+import { Botao, Campo, avisar, tentar } from "../ui";
 import { Icone } from "../icone";
 import { BotaoImportar } from "../backup";
 
 export function BoasVindas() {
   const [nome, setNome] = useState("");
   const [loja, setLoja] = useState("");
+  const [senha, setSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [enviando, setEnviando] = useState(false);
 
-  const enviar = (e: React.FormEvent) => {
+  const enviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    tentar(() => cadastrar(nome, loja), `Bem-vindo(a), ${nome.trim()}!`);
+    if (enviando) return;
+    setEnviando(true);
+    try {
+      const registro = senha ? await prepararSenha(senha, confirmacao) : undefined;
+      tentar(() => cadastrar(nome, loja, registro), `Bem-vindo(a), ${nome.trim()}!`);
+    } catch (err) {
+      avisar(err instanceof Error ? err.message : "Não foi possível criar a senha.", "erro");
+    }
+    setEnviando(false);
   };
 
   return (
@@ -32,8 +44,30 @@ export function BoasVindas() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">Primeiro acesso · cadastro</h2>
         <Campo rotulo="Seu nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Ana Souza" autoComplete="name" required />
         <Campo rotulo="Nome da loja" value={loja} onChange={(e) => setLoja(e.target.value)} placeholder="Ex.: Bar do Zé" autoComplete="organization" required />
-        <Botao type="submit" className="w-full" icone="check">
-          Criar minha loja
+        {senhaDisponivel() && (
+          <Campo
+            rotulo="Senha de acesso"
+            type="password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            autoComplete="new-password"
+            minLength={SENHA_MINIMA}
+            dica="Será pedida ao abrir o sistema. Anote-a: não é possível recuperar uma senha esquecida."
+            opcional
+          />
+        )}
+        {senha && (
+          <Campo
+            rotulo="Confirmar senha"
+            type="password"
+            value={confirmacao}
+            onChange={(e) => setConfirmacao(e.target.value)}
+            autoComplete="new-password"
+            required
+          />
+        )}
+        <Botao type="submit" className="w-full" icone="check" disabled={enviando}>
+          {enviando ? "Criando…" : "Criar minha loja"}
         </Botao>
       </form>
 

@@ -81,6 +81,7 @@ export interface Dados {
   app: "adm-bar";
   versao: 1;
   loja: Loja;
+  categorias: string[];
   produtos: Produto[];
   movimentos: Movimento[];
   caixa: { sessao: SessaoCaixa | null };
